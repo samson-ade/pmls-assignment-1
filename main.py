@@ -1,101 +1,121 @@
 import os
 import pandas as pd
 import numpy as np
-
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
-app = FastAPI(title= "Skin Clinic Campaign Analysis API")
+app = FastAPI(title="Skin Clinic Campaign Analysis API")
 
 # Load dataset
 file_dir = os.path.dirname(os.path.abspath(__file__))
 data_path = os.path.join(file_dir, "skin clinic campaign.csv")
 data = pd.read_csv(data_path)
 
-# Categorise customers based on unique products purchased in the last year
+# Categorize customers based on unique products purchased in the last year
 data['Product_Usage'] = pd.cut(
     data['Unique_Products_Purchased'],
     bins= [0, 4, 8, np.inf],
     labels= ['1-4', '5-8', '>8']
 )
 
-def calculate_response_rate(df, column):
-    results = []
-    for category in df[column].unique():
-        category_data = df[df[column] == category]
-        total_customers = len(category_data)
-        responders = (category_data['Response_to_Campaign'] == 'Yes').sum()
-        response_rate = (responders / total_customers * 100) if total_customers > 0 else 0
-        
-        results.append({
-            "segment": category,
-            "total_customers": int(total_customers),
-            "responders": int(responders),
-            "response_rate_pct": round(response_rate, 2)
+def calculate_segment_table(df, col, col_name, categories=None):
+    if categories is None:
+        categories = df[col].unique()
+    rows = []
+    for cat in categories:
+        sub = df[df[col] == cat]
+        total = len(sub)
+        resp = (sub['Response_to_Campaign'] == 'Yes').sum()
+        rate = round((resp / total) * 100, 2) if total > 0 else 0
+        rows.append({
+            col_name: cat,
+            'Total Customers': total,
+            'Responders': resp,
+            'Response Rate (%)': f'{rate:.2f}%'
         })
-        
-    return pd.DataFrame(results)
+    return pd.DataFrame(rows)
 
 # Generate tables for each customer segment
-gender_table = calculate_response_rate(data, "Gender")
-age_table = calculate_response_rate(data, "AgeGroup")
-purchase_table = calculate_response_rate(data, "Purchase_Last_Quarter")
-product_usage_table = calculate_response_rate(data, "Product_Usage")
+gender_table = calculate_segment_table(data, 'Gender', 'Gender', ['Female', 'Male'])
+age_table = calculate_segment_table(data, 'AgeGroup', 'Age Group', ['<30', '30-50', '>50'])
+purchase_table = calculate_segment_table(data, 'Purchase_Last_Quarter', 'Purchase in Last Quarter', ['Yes', 'No'])
+product_usage_table = calculate_segment_table(data, 'Product_Usage', 'Unique Products Purchased', ['1-4', '5-8', '>8'])
 
-@app.get("/")
-def home():
-    return {
-        "message": "Welcome to the Skin Clinic Campaign Analysis API. Visit /campaign-analysis to view the results in tabular format."
-    }
-
-@app.get("/campaign-analysis", response_class= HTMLResponse)
-def get_campaign_analysis():
-    html_content = f"""
+def render_tabular_html():
+    return f"""
+    <!DOCTYPE html>
     <html>
         <head>
-            <title>Campaign Analysis</title>
+            <title>Skin Clinic Campaign Analysis</title>
             <style>
                 body {{
                     font-family: Arial, sans-serif;
-                    margin: 30px;
-                }}
-                h1 {{
+                    margin: 40px;
+                    background-color: #fafafa;
                     color: #333333;
                 }}
+                h1 {{
+                    color: #1e293b;
+                    margin-bottom: 5px;
+                }}
+                p.subtitle {{
+                    color: #64748b;
+                    margin-top: 0;
+                    margin-bottom: 30px;
+                }}
                 h2 {{
-                    color: #555555;
-                    margin-top: 25px;
+                    color: #334155;
+                    font-size: 18px;
+                    margin-top: 30px;
+                    margin-bottom: 10px;
                 }}
                 table {{
                     border-collapse: collapse;
                     width: 70%;
+                    max-width: 700px;
+                    background: #ffffff;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
                     margin-bottom: 25px;
                 }}
                 th, td {{
-                    border: 1px solid #dddddd;
+                    border: 1px solid #e2e8f0;
                     text-align: left;
-                    padding: 8px;
+                    padding: 10px 14px;
                 }}
                 th {{
-                    background-color: #f2f2f2;
+                    background-color: #f1f5f9;
+                    font-weight: 600;
+                    color: #1e293b;
+                }}
+                tr:hover {{
+                    background-color: #f8fafc;
                 }}
             </style>
         </head>
         <body>
             <h1>Skin Clinic Campaign Analysis</h1>
+            <p class="subtitle">M10 PMLS - Assignment 1: Model Deployment Using FastAPI</p>
 
             <h2>1. Gender vs Campaign Response</h2>
-            {gender_table.to_html(index= False)}
+            {gender_table.to_html(index=False)}
 
             <h2>2. Age Group vs Campaign Response</h2>
-            {age_table.to_html(index= False)}
+            {age_table.to_html(index=False)}
 
             <h2>3. Purchase in Last Quarter vs Campaign Response</h2>
-            {purchase_table.to_html(index= False)}
+            {purchase_table.to_html(index=False)}
 
             <h2>4. Product Usage vs Campaign Response</h2>
-            {product_usage_table.to_html(index= False)}
+            {product_usage_table.to_html(index=False)}
         </body>
     </html>
     """
-    return html_content
+
+# Both root "/" and "/campaign-analysis" return the tabular format directly
+@app.get("/", response_class=HTMLResponse)
+def root():
+    return render_tabular_html()
+
+@app.get("/campaign-analysis", response_class=HTMLResponse)
+def campaign_analysis():
+    return render_tabular_html()
